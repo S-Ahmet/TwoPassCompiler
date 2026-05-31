@@ -49,6 +49,4 @@ Bu aşamada:
 * Java Swing
 * IntelliJ IDEA
 
-## Geliştirici
 
-Sadık Ahmet Karabulut
