@@ -22,6 +22,7 @@ public class SemanticAnalyzer {
     public void analyze() {
         checkDuplicateDeclarations();
         checkUndeclaredVariables();
+        checkTypeCompatibility();
 
         System.out.println("\n--- SEMANTIC ANALYSIS ---");
 
@@ -41,10 +42,7 @@ public class SemanticAnalyzer {
             Token current = tokens.get(i);
             Token next = tokens.get(i + 1);
 
-            if (current.getType().equals("KEYWORD") &&
-                    (current.getValue().equals("int") || current.getValue().equals("float")) &&
-                    next.getType().equals("IDENTIFIER")) {
-
+            if (isTypeKeyword(current) && next.getType().equals("IDENTIFIER")) {
                 String variableName = next.getValue();
 
                 if (declared.contains(variableName)) {
@@ -64,10 +62,7 @@ public class SemanticAnalyzer {
             Token current = tokens.get(i);
             Token next = tokens.get(i + 1);
 
-            if (current.getType().equals("KEYWORD") &&
-                    (current.getValue().equals("int") || current.getValue().equals("float")) &&
-                    next.getType().equals("IDENTIFIER")) {
-
+            if (isTypeKeyword(current) && next.getType().equals("IDENTIFIER")) {
                 declared.add(next.getValue());
             }
         }
@@ -76,12 +71,8 @@ public class SemanticAnalyzer {
             Token current = tokens.get(i);
 
             if (current.getType().equals("IDENTIFIER")) {
-
                 boolean isDeclarationName =
-                        i > 0 &&
-                                tokens.get(i - 1).getType().equals("KEYWORD") &&
-                                (tokens.get(i - 1).getValue().equals("int") ||
-                                        tokens.get(i - 1).getValue().equals("float"));
+                        i > 0 && isTypeKeyword(tokens.get(i - 1));
 
                 if (!isDeclarationName && !declared.contains(current.getValue())) {
                     errors.add("SEMANTIC ERROR -> Line " + current.getLine()
@@ -89,6 +80,65 @@ public class SemanticAnalyzer {
                 }
             }
         }
+    }
+
+    private void checkTypeCompatibility() {
+        for (int i = 0; i < tokens.size() - 2; i++) {
+
+            Token variable = tokens.get(i);
+            Token equalSign = tokens.get(i + 1);
+            Token value = tokens.get(i + 2);
+
+            if (variable.getType().equals("IDENTIFIER") && equalSign.getValue().equals("=")) {
+
+                String variableType = symbolTable.getType(variable.getValue(), "global");
+
+                if (variableType == null) {
+                    continue;
+                }
+
+                String valueType = getValueType(value);
+
+                if (valueType == null) {
+                    continue;
+                }
+
+                if (variableType.equals("int") && !valueType.equals("int")) {
+                    errors.add("SEMANTIC ERROR -> Line " + variable.getLine()
+                            + " : int değişkene " + valueType + " değer atanamaz.");
+                }
+
+                if (variableType.equals("float") && valueType.equals("string")) {
+                    errors.add("SEMANTIC ERROR -> Line " + variable.getLine()
+                            + " : float değişkene string değer atanamaz.");
+                }
+            }
+        }
+    }
+
+    private String getValueType(Token token) {
+        if (token.getType().equals("INTEGER_LITERAL")) {
+            return "int";
+        }
+
+        if (token.getType().equals("FLOAT_LITERAL")) {
+            return "float";
+        }
+
+        if (token.getType().equals("STRING_LITERAL")) {
+            return "string";
+        }
+
+        if (token.getType().equals("IDENTIFIER")) {
+            return symbolTable.getType(token.getValue(), "global");
+        }
+
+        return null;
+    }
+
+    private boolean isTypeKeyword(Token token) {
+        return token.getType().equals("KEYWORD") &&
+                (token.getValue().equals("int") || token.getValue().equals("float"));
     }
 
     public List<String> getErrors() {

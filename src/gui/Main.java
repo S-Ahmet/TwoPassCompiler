@@ -6,24 +6,29 @@ import lexer.Token;
 import parser.Parser;
 import semantic.SemanticAnalyzer;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
 
 public class Main {
 
     public static void main(String[] args) {
 
-        String code = """
-                int x;
-                int y;
-                float result;
+        String code;
 
-                x = 10;
-                y = 3;
-                result = x + y * 2;
-                """;
+        try {
+            code = Files.readString(Path.of("program.txt"));
+        } catch (IOException e) {
+            System.out.println("Dosya okunamadı: " + e.getMessage());
+            return;
+        }
 
         Lexer lexer = new Lexer();
         List<Token> tokens = lexer.tokenize(code);
+
+        System.out.println("--- SOURCE CODE ---");
+        System.out.println(code);
 
         System.out.println("--- TOKENS ---");
         for (Token token : tokens) {

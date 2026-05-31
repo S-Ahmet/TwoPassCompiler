@@ -16,18 +16,11 @@ public class Parser {
     }
 
     public ASTNode parse() {
-
         while (!isAtEnd()) {
+            ASTNode statement = parseStatement();
 
-            if (matchKeyword("int") || matchKeyword("float")) {
-                root.addChild(parseDeclaration());
-            }
-            else if (checkType("IDENTIFIER")) {
-                root.addChild(parseAssignment());
-            }
-            else {
-                error("Beklenmeyen token: " + peek().getValue());
-                advance();
+            if (statement != null) {
+                root.addChild(statement);
             }
         }
 
@@ -35,8 +28,33 @@ public class Parser {
         return root;
     }
 
-    private ASTNode parseDeclaration() {
+    private ASTNode parseStatement() {
+        if (matchKeyword("int") || matchKeyword("float")) {
+            return parseDeclaration();
+        }
 
+        if (matchKeyword("if")) {
+            return parseIfStatement();
+        }
+
+        if (matchKeyword("while")) {
+            return parseWhileStatement();
+        }
+
+        if (matchKeyword("print")) {
+            return parsePrintStatement();
+        }
+
+        if (checkType("IDENTIFIER")) {
+            return parseAssignment();
+        }
+
+        error("Beklenmeyen token: " + peek().getValue());
+        advance();
+        return null;
+    }
+
+    private ASTNode parseDeclaration() {
         Token type = previous();
 
         ASTNode declarationNode = new ASTNode("Declaration");
@@ -58,7 +76,6 @@ public class Parser {
     }
 
     private ASTNode parseAssignment() {
-
         Token identifier = advance();
 
         ASTNode assignmentNode = new ASTNode("Assignment");
@@ -69,25 +86,7 @@ public class Parser {
             return assignmentNode;
         }
 
-        ASTNode expressionNode = new ASTNode("Expression");
-
-        if (!(matchType("INTEGER_LITERAL")
-                || matchType("FLOAT_LITERAL")
-                || matchType("IDENTIFIER"))) {
-
-            error("Atama değeri bekleniyor");
-            return assignmentNode;
-        }
-
-        expressionNode.addChild(new ASTNode("Value: " + previous().getValue()));
-
-        while (!isAtEnd() && !checkValue(";")) {
-            Token operatorOrValue = advance();
-            expressionNode.addChild(
-                    new ASTNode(operatorOrValue.getType() + ": " + operatorOrValue.getValue())
-            );
-        }
-
+        ASTNode expressionNode = parseExpressionUntil(";");
         assignmentNode.addChild(expressionNode);
 
         if (!matchValue(";")) {
@@ -95,6 +94,114 @@ public class Parser {
         }
 
         return assignmentNode;
+    }
+
+    private ASTNode parseIfStatement() {
+        ASTNode ifNode = new ASTNode("If Statement");
+
+        if (!matchValue("(")) {
+            error("'(' bekleniyor");
+            return ifNode;
+        }
+
+        ASTNode conditionNode = parseExpressionUntil(")");
+        ifNode.addChild(new ASTNode("Condition"));
+        ifNode.getChildren().get(ifNode.getChildren().size() - 1).addChild(conditionNode);
+
+        if (!matchValue(")")) {
+            error("')' bekleniyor");
+        }
+
+        ASTNode ifBlock = parseBlock("If Block");
+        ifNode.addChild(ifBlock);
+
+        if (!isAtEnd() && checkValue("else")) {
+            advance();
+
+            ASTNode elseBlock = parseBlock("Else Block");
+            ifNode.addChild(elseBlock);
+        }
+
+        return ifNode;
+    }
+
+    private ASTNode parseWhileStatement() {
+        ASTNode whileNode = new ASTNode("While Statement");
+
+        if (!matchValue("(")) {
+            error("'(' bekleniyor");
+            return whileNode;
+        }
+
+        ASTNode conditionNode = parseExpressionUntil(")");
+        ASTNode conditionWrapper = new ASTNode("Condition");
+        conditionWrapper.addChild(conditionNode);
+        whileNode.addChild(conditionWrapper);
+
+        if (!matchValue(")")) {
+            error("')' bekleniyor");
+        }
+
+        ASTNode whileBlock = parseBlock("While Block");
+        whileNode.addChild(whileBlock);
+
+        return whileNode;
+    }
+
+    private ASTNode parsePrintStatement() {
+        ASTNode printNode = new ASTNode("Print Statement");
+
+        if (!matchValue("(")) {
+            error("'(' bekleniyor");
+            return printNode;
+        }
+
+        ASTNode expressionNode = parseExpressionUntil(")");
+        printNode.addChild(expressionNode);
+
+        if (!matchValue(")")) {
+            error("')' bekleniyor");
+        }
+
+        if (!matchValue(";")) {
+            error("';' bekleniyor");
+        }
+
+        return printNode;
+    }
+
+    private ASTNode parseBlock(String blockName) {
+        ASTNode blockNode = new ASTNode(blockName);
+
+        if (!matchValue("{")) {
+            error("'{' bekleniyor");
+            return blockNode;
+        }
+
+        while (!isAtEnd() && !checkValue("}")) {
+            ASTNode statement = parseStatement();
+
+            if (statement != null) {
+                blockNode.addChild(statement);
+            }
+        }
+
+        if (!matchValue("}")) {
+            error("'}' bekleniyor");
+        }
+
+        return blockNode;
+    }
+
+    private ASTNode parseExpressionUntil(String endValue) {
+        ASTNode expressionNode = new ASTNode("Expression");
+
+        while (!isAtEnd() && !checkValue(endValue)) {
+            Token token = advance();
+            expressionNode.addChild(new ASTNode(token.getType() + ": " + token.getValue()));
+        }
+
+        return expressionNode;
     }
 
     private boolean matchKeyword(String keyword) {
@@ -149,11 +256,15 @@ public class Parser {
     }
 
     private void error(String message) {
-        System.out.println(
-                "SYNTAX ERROR -> Line "
-                        + peek().getLine()
-                        + " : "
-                        + message
-        );
+        if (!isAtEnd()) {
+            System.out.println(
+                    "SYNTAX ERROR -> Line "
+                            + peek().getLine()
+                            + " : "
+                            + message
+            );
+        } else {
+            System.out.println("SYNTAX ERROR -> Dosya sonunda hata: " + message);
+        }
     }
 }
