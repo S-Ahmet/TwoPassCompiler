@@ -1,5 +1,6 @@
 package gui;
 
+import ast.ASTNode;
 import lexer.Lexer;
 import lexer.Token;
 import parser.Parser;
@@ -16,7 +17,7 @@ public class Main {
                 int y;
                 float result;
 
-                x = x
+                x = 10;
                 y = 3;
                 result = x + y * 2;
                 """;
@@ -32,11 +33,14 @@ public class Main {
         lexer.getSymbolTable().printTable();
 
         Parser parser = new Parser(tokens);
-        parser.parse();
+        ASTNode ast = parser.parse();
 
         SemanticAnalyzer semanticAnalyzer =
                 new SemanticAnalyzer(tokens, lexer.getSymbolTable());
 
         semanticAnalyzer.analyze();
+
+        System.out.println("\n--- AST / PARSE TREE ---");
+        ast.print("");
     }
 }
