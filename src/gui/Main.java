@@ -2,6 +2,7 @@ package gui;
 
 import lexer.Lexer;
 import lexer.Token;
+import parser.Parser;
 
 import java.util.List;
 
@@ -28,5 +29,8 @@ public class Main {
         }
 
         lexer.getSymbolTable().printTable();
+
+        Parser parser = new Parser(tokens);
+        parser.parse();
     }
 }
