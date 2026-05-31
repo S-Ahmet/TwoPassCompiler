@@ -3,6 +3,7 @@ package gui;
 import lexer.Lexer;
 import lexer.Token;
 import parser.Parser;
+import semantic.SemanticAnalyzer;
 
 import java.util.List;
 
@@ -15,7 +16,7 @@ public class Main {
                 int y;
                 float result;
 
-                x = 10;
+                x = x
                 y = 3;
                 result = x + y * 2;
                 """;
@@ -32,5 +33,10 @@ public class Main {
 
         Parser parser = new Parser(tokens);
         parser.parse();
+
+        SemanticAnalyzer semanticAnalyzer =
+                new SemanticAnalyzer(tokens, lexer.getSymbolTable());
+
+        semanticAnalyzer.analyze();
     }
 }
