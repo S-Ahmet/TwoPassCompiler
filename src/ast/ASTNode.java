@@ -32,4 +32,18 @@ public class ASTNode {
             child.print(indent + "  ");
         }
     }
+
+    public String toTreeString() {
+        StringBuilder builder = new StringBuilder();
+        appendTree(builder, "");
+        return builder.toString();
+    }
+
+    private void appendTree(StringBuilder builder, String indent) {
+        builder.append(indent).append("- ").append(name).append("\n");
+
+        for (ASTNode child : children) {
+            child.appendTree(builder, indent + "  ");
+        }
+    }
 }

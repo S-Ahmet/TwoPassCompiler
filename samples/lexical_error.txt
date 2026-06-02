@@ -1,0 +1,5 @@
+int x;
+
+x = 12.4.5;
+print("This string is not closed);
+@
