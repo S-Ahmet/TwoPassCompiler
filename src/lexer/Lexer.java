@@ -2,6 +2,10 @@ package lexer;
 
 import symboltable.SymbolTable;
 
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -13,15 +17,18 @@ public class Lexer {
 
     private SymbolTable symbolTable = new SymbolTable();
 
-    public List<Token> tokenize(String sourceCode) {
+    public String readSourceFile(Path path) throws IOException {
+        return Files.readString(path, StandardCharsets.UTF_8);
+    }
 
+    public List<Token> tokenize(String sourceCode) {
+        symbolTable = new SymbolTable();
         List<Token> tokens = new ArrayList<>();
 
         int line = 1;
         int i = 0;
 
         while (i < sourceCode.length()) {
-
             char current = sourceCode.charAt(i);
 
             if (current == '\n') {
@@ -35,7 +42,43 @@ public class Lexer {
                 continue;
             }
 
-            if (Character.isLetter(current)) {
+            if (current == '/' && peek(sourceCode, i + 1) == '/') {
+                i += 2;
+
+                while (i < sourceCode.length() && sourceCode.charAt(i) != '\n') {
+                    i++;
+                }
+
+                continue;
+            }
+
+            if (current == '/' && peek(sourceCode, i + 1) == '*') {
+                int commentStartLine = line;
+                i += 2;
+                boolean closed = false;
+
+                while (i < sourceCode.length()) {
+                    if (sourceCode.charAt(i) == '\n') {
+                        line++;
+                    }
+
+                    if (sourceCode.charAt(i) == '*' && peek(sourceCode, i + 1) == '/') {
+                        i += 2;
+                        closed = true;
+                        break;
+                    }
+
+                    i++;
+                }
+
+                if (!closed) {
+                    tokens.add(new Token("LEXICAL_ERROR", "Unclosed block comment", commentStartLine));
+                }
+
+                continue;
+            }
+
+            if (Character.isLetter(current) || current == '_') {
                 StringBuilder word = new StringBuilder();
 
                 while (i < sourceCode.length() &&
@@ -45,13 +88,7 @@ public class Lexer {
                 }
 
                 String value = word.toString();
-
-                if (isKeyword(value)) {
-                    tokens.add(new Token("KEYWORD", value, line));
-                } else {
-                    tokens.add(new Token("IDENTIFIER", value, line));
-                }
-
+                tokens.add(new Token(isKeyword(value) ? "KEYWORD" : "IDENTIFIER", value, line));
                 continue;
             }
 
@@ -62,7 +99,6 @@ public class Lexer {
 
                 while (i < sourceCode.length() &&
                         (Character.isDigit(sourceCode.charAt(i)) || sourceCode.charAt(i) == '.')) {
-
                     if (sourceCode.charAt(i) == '.') {
                         isFloat = true;
                         dotCount++;
@@ -72,8 +108,8 @@ public class Lexer {
                     i++;
                 }
 
-                if (dotCount > 1) {
-                    tokens.add(new Token("LEXICAL_ERROR", "Hatalı sayı: " + number, line));
+                if (dotCount > 1 || number.charAt(number.length() - 1) == '.') {
+                    tokens.add(new Token("LEXICAL_ERROR", "Malformed number: " + number, line));
                 } else if (isFloat) {
                     tokens.add(new Token("FLOAT_LITERAL", number.toString(), line));
                 } else {
@@ -85,18 +121,23 @@ public class Lexer {
 
             if (current == '"') {
                 StringBuilder text = new StringBuilder();
+                int stringStartLine = line;
                 i++;
 
                 while (i < sourceCode.length() && sourceCode.charAt(i) != '"') {
+                    if (sourceCode.charAt(i) == '\n') {
+                        line++;
+                    }
+
                     text.append(sourceCode.charAt(i));
                     i++;
                 }
 
                 if (i < sourceCode.length() && sourceCode.charAt(i) == '"') {
                     i++;
-                    tokens.add(new Token("STRING_LITERAL", text.toString(), line));
+                    tokens.add(new Token("STRING_LITERAL", text.toString(), stringStartLine));
                 } else {
-                    tokens.add(new Token("LEXICAL_ERROR", "Kapatılmamış string", line));
+                    tokens.add(new Token("LEXICAL_ERROR", "Unclosed string literal", stringStartLine));
                 }
 
                 continue;
@@ -108,14 +149,13 @@ public class Lexer {
                 if (twoChar.equals("==") || twoChar.equals("!=") ||
                         twoChar.equals("<=") || twoChar.equals(">=") ||
                         twoChar.equals("&&") || twoChar.equals("||")) {
-
                     tokens.add(new Token("OPERATOR", twoChar, line));
                     i += 2;
                     continue;
                 }
             }
 
-            if ("+-*/=<>".indexOf(current) != -1) {
+            if ("+-*/=<>!".indexOf(current) != -1) {
                 tokens.add(new Token("OPERATOR", String.valueOf(current), line));
                 i++;
                 continue;
@@ -127,27 +167,31 @@ public class Lexer {
                 continue;
             }
 
-            tokens.add(new Token("LEXICAL_ERROR", "Geçersiz karakter: " + current, line));
+            tokens.add(new Token("LEXICAL_ERROR", "Invalid character: " + current, line));
             i++;
         }
 
         buildSymbolTable(tokens);
-
         return tokens;
+    }
+
+    private char peek(String sourceCode, int index) {
+        if (index >= sourceCode.length()) {
+            return '\0';
+        }
+
+        return sourceCode.charAt(index);
     }
 
     private void buildSymbolTable(List<Token> tokens) {
         for (int i = 0; i < tokens.size() - 2; i++) {
-
             Token current = tokens.get(i);
             Token next = tokens.get(i + 1);
             Token afterNext = tokens.get(i + 2);
 
-            if (current.getType().equals("KEYWORD") &&
-                    (current.getValue().equals("int") || current.getValue().equals("float")) &&
+            if (isTypeKeyword(current) &&
                     next.getType().equals("IDENTIFIER") &&
                     afterNext.getValue().equals(";")) {
-
                 symbolTable.addSymbol(next.getValue(), current.getValue(), "global");
             }
         }
@@ -163,6 +207,12 @@ public class Lexer {
                 return true;
             }
         }
+
         return false;
+    }
+
+    private boolean isTypeKeyword(Token token) {
+        return token.getType().equals("KEYWORD") &&
+                (token.getValue().equals("int") || token.getValue().equals("float"));
     }
 }

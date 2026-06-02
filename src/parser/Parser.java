@@ -3,19 +3,27 @@ package parser;
 import ast.ASTNode;
 import lexer.Token;
 
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 
 public class Parser {
 
     private final List<Token> tokens;
+    private final List<String> errors = new ArrayList<>();
     private int current = 0;
     private ASTNode root = new ASTNode("Program");
+    private List<String> expressionEndValues = new ArrayList<>();
 
     public Parser(List<Token> tokens) {
         this.tokens = tokens;
     }
 
     public ASTNode parse() {
+        current = 0;
+        errors.clear();
+        root = new ASTNode("Program");
+
         while (!isAtEnd()) {
             ASTNode statement = parseStatement();
 
@@ -24,11 +32,19 @@ public class Parser {
             }
         }
 
-        System.out.println("\nSyntax analizi tamamlandı.");
         return root;
     }
 
+    public List<String> getErrors() {
+        return errors;
+    }
+
     private ASTNode parseStatement() {
+        if (checkType("LEXICAL_ERROR")) {
+            advance();
+            return null;
+        }
+
         if (matchKeyword("int") || matchKeyword("float")) {
             return parseDeclaration();
         }
@@ -49,7 +65,7 @@ public class Parser {
             return parseAssignment();
         }
 
-        error("Beklenmeyen token: " + peek().getValue());
+        error("Unexpected token: " + peek().getValue());
         advance();
         return null;
     }
@@ -61,7 +77,9 @@ public class Parser {
         declarationNode.addChild(new ASTNode("Type: " + type.getValue()));
 
         if (!matchType("IDENTIFIER")) {
-            error("Değişken adı bekleniyor");
+            error("Variable name expected");
+            synchronizeTo(";");
+            matchValue(";");
             return declarationNode;
         }
 
@@ -69,7 +87,9 @@ public class Parser {
         declarationNode.addChild(new ASTNode("Identifier: " + identifier.getValue()));
 
         if (!matchValue(";")) {
-            error("';' bekleniyor");
+            error("';' expected");
+            synchronizeTo(";");
+            matchValue(";");
         }
 
         return declarationNode;
@@ -82,15 +102,18 @@ public class Parser {
         assignmentNode.addChild(new ASTNode("Identifier: " + identifier.getValue()));
 
         if (!matchValue("=")) {
-            error("'=' bekleniyor");
+            error("'=' expected");
+            synchronizeTo(";");
+            matchValue(";");
             return assignmentNode;
         }
 
-        ASTNode expressionNode = parseExpressionUntil(";");
-        assignmentNode.addChild(expressionNode);
+        assignmentNode.addChild(parseExpression(";"));
 
         if (!matchValue(";")) {
-            error("';' bekleniyor");
+            error("';' expected");
+            synchronizeTo(";");
+            matchValue(";");
         }
 
         return assignmentNode;
@@ -100,26 +123,23 @@ public class Parser {
         ASTNode ifNode = new ASTNode("If Statement");
 
         if (!matchValue("(")) {
-            error("'(' bekleniyor");
+            error("'(' expected after if");
             return ifNode;
         }
 
-        ASTNode conditionNode = parseExpressionUntil(")");
-        ifNode.addChild(new ASTNode("Condition"));
-        ifNode.getChildren().get(ifNode.getChildren().size() - 1).addChild(conditionNode);
+        ASTNode conditionWrapper = new ASTNode("Condition");
+        conditionWrapper.addChild(parseExpression(")"));
+        ifNode.addChild(conditionWrapper);
 
         if (!matchValue(")")) {
-            error("')' bekleniyor");
+            error("')' expected after if condition");
         }
 
-        ASTNode ifBlock = parseBlock("If Block");
-        ifNode.addChild(ifBlock);
+        ifNode.addChild(parseBlock("If Block"));
 
         if (!isAtEnd() && checkValue("else")) {
             advance();
-
-            ASTNode elseBlock = parseBlock("Else Block");
-            ifNode.addChild(elseBlock);
+            ifNode.addChild(parseBlock("Else Block"));
         }
 
         return ifNode;
@@ -129,22 +149,19 @@ public class Parser {
         ASTNode whileNode = new ASTNode("While Statement");
 
         if (!matchValue("(")) {
-            error("'(' bekleniyor");
+            error("'(' expected after while");
             return whileNode;
         }
 
-        ASTNode conditionNode = parseExpressionUntil(")");
         ASTNode conditionWrapper = new ASTNode("Condition");
-        conditionWrapper.addChild(conditionNode);
+        conditionWrapper.addChild(parseExpression(")"));
         whileNode.addChild(conditionWrapper);
 
         if (!matchValue(")")) {
-            error("')' bekleniyor");
+            error("')' expected after while condition");
         }
 
-        ASTNode whileBlock = parseBlock("While Block");
-        whileNode.addChild(whileBlock);
-
+        whileNode.addChild(parseBlock("While Block"));
         return whileNode;
     }
 
@@ -152,19 +169,20 @@ public class Parser {
         ASTNode printNode = new ASTNode("Print Statement");
 
         if (!matchValue("(")) {
-            error("'(' bekleniyor");
+            error("'(' expected after print");
             return printNode;
         }
 
-        ASTNode expressionNode = parseExpressionUntil(")");
-        printNode.addChild(expressionNode);
+        printNode.addChild(parseExpression(")"));
 
         if (!matchValue(")")) {
-            error("')' bekleniyor");
+            error("')' expected after print expression");
         }
 
         if (!matchValue(";")) {
-            error("';' bekleniyor");
+            error("';' expected after print statement");
+            synchronizeTo(";");
+            matchValue(";");
         }
 
         return printNode;
@@ -174,7 +192,7 @@ public class Parser {
         ASTNode blockNode = new ASTNode(blockName);
 
         if (!matchValue("{")) {
-            error("'{' bekleniyor");
+            error("'{' expected");
             return blockNode;
         }
 
@@ -187,21 +205,145 @@ public class Parser {
         }
 
         if (!matchValue("}")) {
-            error("'}' bekleniyor");
+            error("'}' expected");
         }
 
         return blockNode;
     }
 
-    private ASTNode parseExpressionUntil(String endValue) {
-        ASTNode expressionNode = new ASTNode("Expression");
+    private ASTNode parseExpression(String... endValues) {
+        List<String> previousEndValues = expressionEndValues;
+        expressionEndValues = Arrays.asList(endValues);
 
-        while (!isAtEnd() && !checkValue(endValue)) {
-            Token token = advance();
-            expressionNode.addChild(new ASTNode(token.getType() + ": " + token.getValue()));
+        if (isAtEnd() || isExpressionEnd()) {
+            error("Expression expected");
+            expressionEndValues = previousEndValues;
+            return new ASTNode("Missing Expression");
         }
 
-        return expressionNode;
+        ASTNode expression = parseLogicalOr();
+
+        while (!isAtEnd() && !isExpressionEnd()) {
+            if (isRecoveryBoundary()) {
+                break;
+            }
+
+            error("Unexpected token in expression: " + peek().getValue());
+            advance();
+        }
+
+        expressionEndValues = previousEndValues;
+        return expression;
+    }
+
+    private ASTNode parseLogicalOr() {
+        ASTNode node = parseLogicalAnd();
+
+        while (matchOperator("||")) {
+            node = binaryNode(previous(), node, parseLogicalAnd());
+        }
+
+        return node;
+    }
+
+    private ASTNode parseLogicalAnd() {
+        ASTNode node = parseEquality();
+
+        while (matchOperator("&&")) {
+            node = binaryNode(previous(), node, parseEquality());
+        }
+
+        return node;
+    }
+
+    private ASTNode parseEquality() {
+        ASTNode node = parseComparison();
+
+        while (matchOperator("==") || matchOperator("!=")) {
+            node = binaryNode(previous(), node, parseComparison());
+        }
+
+        return node;
+    }
+
+    private ASTNode parseComparison() {
+        ASTNode node = parseTerm();
+
+        while (matchOperator("<") || matchOperator(">") ||
+                matchOperator("<=") || matchOperator(">=")) {
+            node = binaryNode(previous(), node, parseTerm());
+        }
+
+        return node;
+    }
+
+    private ASTNode parseTerm() {
+        ASTNode node = parseFactor();
+
+        while (matchOperator("+") || matchOperator("-")) {
+            node = binaryNode(previous(), node, parseFactor());
+        }
+
+        return node;
+    }
+
+    private ASTNode parseFactor() {
+        ASTNode node = parseUnary();
+
+        while (matchOperator("*") || matchOperator("/")) {
+            node = binaryNode(previous(), node, parseUnary());
+        }
+
+        return node;
+    }
+
+    private ASTNode parseUnary() {
+        if (matchOperator("!") || matchOperator("-") || matchOperator("+")) {
+            Token operator = previous();
+            ASTNode node = new ASTNode("Unary Operator: " + operator.getValue());
+            node.addChild(parseUnary());
+            return node;
+        }
+
+        return parsePrimary();
+    }
+
+    private ASTNode parsePrimary() {
+        if (matchType("IDENTIFIER") || matchType("INTEGER_LITERAL") ||
+                matchType("FLOAT_LITERAL") || matchType("STRING_LITERAL")) {
+            Token token = previous();
+            return new ASTNode(token.getType() + ": " + token.getValue());
+        }
+
+        if (matchValue("(")) {
+            ASTNode node = new ASTNode("Grouped Expression");
+            node.addChild(parseExpression(")"));
+
+            if (!matchValue(")")) {
+                error("')' expected in expression");
+            }
+
+            return node;
+        }
+
+        if (!isAtEnd()) {
+            error("Expression value expected, found: " + peek().getValue());
+
+            if (!isExpressionEnd() && !isRecoveryBoundary()) {
+                advance();
+            }
+        } else {
+            error("Expression value expected at end of file");
+        }
+
+        return new ASTNode("Invalid Expression");
+    }
+
+    private ASTNode binaryNode(Token operator, ASTNode left, ASTNode right) {
+        ASTNode node = new ASTNode("Binary Operator: " + operator.getValue());
+        node.addChild(left);
+        node.addChild(right);
+        return node;
     }
 
     private boolean matchKeyword(String keyword) {
@@ -209,6 +351,7 @@ public class Parser {
             advance();
             return true;
         }
+
         return false;
     }
 
@@ -217,6 +360,16 @@ public class Parser {
             advance();
             return true;
         }
+
+        return false;
+    }
+
+    private boolean matchOperator(String operator) {
+        if (checkType("OPERATOR") && checkValue(operator)) {
+            advance();
+            return true;
+        }
+
         return false;
     }
 
@@ -225,21 +378,53 @@ public class Parser {
             advance();
             return true;
         }
+
         return false;
     }
 
     private boolean checkType(String type) {
-        if (isAtEnd()) return false;
+        if (isAtEnd()) {
+            return false;
+        }
+
         return peek().getType().equals(type);
     }
 
     private boolean checkValue(String value) {
-        if (isAtEnd()) return false;
+        if (isAtEnd()) {
+            return false;
+        }
+
         return peek().getValue().equals(value);
     }
 
+    private boolean isExpressionEnd() {
+        if (isAtEnd()) {
+            return true;
+        }
+
+        return expressionEndValues.contains(peek().getValue());
+    }
+
+    private boolean isRecoveryBoundary() {
+        if (isAtEnd()) {
+            return true;
+        }
+
+        return checkValue(";") || checkValue("{") || checkValue("}");
+    }
+
+    private void synchronizeTo(String value) {
+        while (!isAtEnd() && !checkValue(value)) {
+            advance();
+        }
+    }
+
     private Token advance() {
-        if (!isAtEnd()) current++;
+        if (!isAtEnd()) {
+            current++;
+        }
+
         return previous();
     }
 
@@ -257,14 +442,12 @@ public class Parser {
 
     private void error(String message) {
         if (!isAtEnd()) {
-            System.out.println(
-                    "SYNTAX ERROR -> Line "
-                            + peek().getLine()
-                            + " : "
-                            + message
-            );
+            errors.add("SYNTAX ERROR -> Line "
+                    + peek().getLine()
+                    + " : "
+                    + message);
         } else {
-            System.out.println("SYNTAX ERROR -> Dosya sonunda hata: " + message);
+            errors.add("SYNTAX ERROR -> End of file : " + message);
         }
     }
 }
